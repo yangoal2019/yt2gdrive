@@ -1,10 +1,10 @@
 # yt2gdrive
 
-把 YouTube 频道的更新自动下载为 mp3 并上传到 Google Drive，适合播客式追更（通勤听、跑步听）。
+把 YouTube 频道的更新自动下载为 **音频（mp3）或视频（mp4）** 并上传到 Google Drive，适合播客式追更或离线收藏。
 
 ## 特性
 
-- 🎧 自动下载 mp3（最佳音质），按频道分目录
+- 🎧 **双模式**：`MEDIA_MODE=audio` 下载 mp3（默认）｜`MEDIA_MODE=video` 下载 mp4 原画
 - ☁️ rclone 上传 Google Drive，带宽限速不占满网
 - ⏱️ 只追最近 N 天的更新（默认 3 天），不会回捞频道历史视频
 - 🧠 归档去重（`archive.txt`），不重复下载
@@ -31,8 +31,11 @@ rclone config   # 添加 gdrive remote
 cp channels.conf.example ~/.config/yt2gdrive/channels.conf
 vim ~/.config/yt2gdrive/channels.conf   # 每行一个频道
 
-# 2. 手动跑一次
+# 2. 手动跑一次（音频模式，默认）
 ./scripts/yt2gdrive.sh
+
+# 2b. 想下载视频（mp4）？加个环境变量：
+MEDIA_MODE=video ./scripts/yt2gdrive.sh
 
 # 3. （可选）装每日定时任务，每天 07:30 自动同步
 ./scripts/install_launchd.sh
@@ -44,6 +47,7 @@ vim ~/.config/yt2gdrive/channels.conf   # 每行一个频道
 
 | 变量 | 默认值 | 说明 |
 |---|---|---|
+| `MEDIA_MODE` | `audio` | `audio`=mp3 音频，`video`=mp4 视频 |
 | `CHANNELS_FILE` | `~/.config/yt2gdrive/channels.conf` | 频道列表 |
 | `ARCHIVE_FILE` | `~/.config/yt2gdrive/archive.txt` | 下载归档（去重） |
 | `LOCAL_DIR` | `~/yt-uploads` | 本地暂存目录 |
@@ -52,6 +56,9 @@ vim ~/.config/yt2gdrive/channels.conf   # 每行一个频道
 | `RECENT_DAYS` | `3` | 只下载最近 N 天 |
 | `AUDIO_FORMAT` | `mp3` | 音频格式 |
 | `AUDIO_QUALITY` | `0` | 0=最佳 |
+| `VIDEO_FORMAT` | `bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best` | 视频格式选择 |
+| `MAX_FILESIZE` | `2G` | 视频单文件上限 |
+| `MAX_DURATION` | `7200` | 跳过超长视频（秒） |
 | `BWLIMIT` | `8.5M` | 上传限速 |
 | `CLEANUP_DAYS` | `3` | 本地保留天数 |
 
@@ -63,10 +70,10 @@ vim ~/.config/yt2gdrive/channels.conf   # 每行一个频道
 ## 文件命名
 
 ```
-<上传日期 YYYYMMDD> - <标题前120字符>.mp3
+<上传日期 YYYYMMDD> - <标题前120字符>.<扩展名>
 ```
 
-按上传者（频道名）分目录存放。
+按上传者（频道名）分目录存放。音频模式扩展名为 mp3，视频模式为 mp4。
 
 ## 排错
 

@@ -1,6 +1,7 @@
 #!/bin/bash
-# yt2gdrive.sh — YouTube 频道自动下载音频并上传 Google Drive
+# yt2gdrive.sh — YouTube 频道自动下载媒体（音频/视频）并上传 Google Drive
 # 用法: yt2gdrive.sh [--dry-run] [--keep-local]
+# 模式: MEDIA_MODE=audio（默认 mp3）或 MEDIA_MODE=video（mp4）
 #
 # 环境变量可覆盖配置（见下方 CONFIG 区块，默认值适合大多数场景）
 # 频道列表: CHANNELS_FILE（每行一个频道 URL，# 开头为注释）
@@ -11,18 +12,31 @@ set -euo pipefail
 
 # ===== 配置（可用环境变量覆盖）=====
 CHANNELS_FILE="${CHANNELS_FILE:-$HOME/.config/yt2gdrive/channels.conf}"
-ARCHIVE_FILE="${ARCHIVE_FILE:-$HOME/.config/yt2gdrive/archive.txt}"
+MEDIA_MODE="${MEDIA_MODE:-audio}"      # audio=mp3 音频, video=mp4 视频
+# 归档按模式分离：音频 archive.txt，视频 archive-video.txt（互不干扰）
+ARCHIVE_FILE="${ARCHIVE_FILE:-}"
+if [[ -z "$ARCHIVE_FILE" ]]; then
+    if [[ "$MEDIA_MODE" == "video" ]]; then
+        ARCHIVE_FILE="$HOME/.config/yt2gdrive/archive-video.txt"
+    else
+        ARCHIVE_FILE="$HOME/.config/yt2gdrive/archive.txt"
+    fi
+fi
 LOCAL_DIR="${LOCAL_DIR:-$HOME/yt-uploads}"
 REMOTE_NAME="${REMOTE_NAME:-gdrive}"
 REMOTE_PATH="${REMOTE_PATH:-油管}"
 LOG_DIR="${LOG_DIR:-$HOME/.config/yt2gdrive}"
 LOG_FILE="$LOG_DIR/last.log"
 CLEANUP_DAYS="${CLEANUP_DAYS:-3}"     # 本地文件保留天数
+MEDIA_MODE="${MEDIA_MODE:-audio}"      # audio=mp3 音频, video=mp4 视频
 AUDIO_FORMAT="${AUDIO_FORMAT:-mp3}"
-AUDIO_QUALITY="${AUDIO_QUALITY:-0}"   # 0=最佳, 9=最差
-MAX_DOWNLOADS="${MAX_DOWNLOADS:-50}"  # 每个频道最多下载数（安全阀）
-RECENT_DAYS="${RECENT_DAYS:-3}"       # 只下载最近 N 天内的更新（避免回捞旧视频）
-BWLIMIT="${BWLIMIT:-8.5M}"            # 上传限速
+AUDIO_QUALITY="${AUDIO_QUALITY:-0}"    # 0=最佳, 9=最差
+VIDEO_FORMAT="${VIDEO_FORMAT:-bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best}"  # 最佳 mp4
+MAX_DOWNLOADS="${MAX_DOWNLOADS:-50}"   # 每个频道最多下载数（安全阀）
+RECENT_DAYS="${RECENT_DAYS:-3}"        # 只下载最近 N 天内的更新（避免回捞旧视频）
+BWLIMIT="${BWLIMIT:-8.5M}"             # 上传限速
+MAX_DURATION="${MAX_DURATION:-7200}"  # 跳过时长超过 N 秒的视频（默认 2 小时）
+MAX_FILESIZE="${MAX_FILESIZE:-2G}"     # 单文件最大 2GB（视频模式下生效）
 
 # ===== 参数解析 =====
 DRY_RUN=""
@@ -66,13 +80,29 @@ download_channels() {
         local date_min
         date_min=$(date -v-${RECENT_DAYS}d '+%Y%m%d' 2>/dev/null || date -d "-${RECENT_DAYS} days" '+%Y%m%d')
 
+        # 根据 MEDIA_MODE 组装下载参数
+        local media_args=()
+        if [[ "$MEDIA_MODE" == "video" ]]; then
+            media_args=(
+                -f "$VIDEO_FORMAT"
+                --merge-output-format mp4
+                --max-filesize "$MAX_FILESIZE"
+            )
+        else
+            media_args=(
+                -x
+                --audio-format "$AUDIO_FORMAT"
+                --audio-quality "$AUDIO_QUALITY"
+            )
+        fi
+
         yt-dlp \
             --download-archive "$ARCHIVE_FILE" \
             --dateafter "$date_min" \
-            --match-filter "duration < 7200" \
+            --match-filter "duration < $MAX_DURATION" \
             --break-on-reject \
             --playlist-end "$MAX_DOWNLOADS" \
-            -x --audio-format "$AUDIO_FORMAT" --audio-quality "$AUDIO_QUALITY" \
+            "${media_args[@]}" \
             --no-overwrites \
             --ignore-errors \
             --no-warnings \
@@ -87,7 +117,8 @@ download_channels() {
         total_new=$((total_new + new))
         
         if [[ $new -gt 0 ]]; then
-            log "✅ $channel_name: 新下载 $new 个音频"
+            local kind=音频; [[ "$MEDIA_MODE" == "video" ]] && kind=视频
+            log "✅ $channel_name: 新下载 $new 个$kind"
         else
             log "⏭️  $channel_name: 无新内容"
         fi
@@ -142,6 +173,7 @@ check_drive
 
 log "📂 下载目录: $LOCAL_DIR"
 log "📋 频道列表: $CHANNELS_FILE"
+log "🎛️ 模式: $MEDIA_MODE"
 
 # 确保归档文件存在
 touch "$ARCHIVE_FILE"
